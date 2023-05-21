@@ -1,3 +1,6 @@
+# Secrets, API Keys, Passwords, or other sensitive information.
+secrets/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
