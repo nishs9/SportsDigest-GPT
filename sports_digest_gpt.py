@@ -33,22 +33,6 @@ def save_upcoming_game_info(db):
         doc_ref = db.collection('games').document(unique_game_id)
         doc_ref.set(game_data)
 
-# Retrieves and returns a list of all games that have not yet been summarized 
-def get_unsummarized_games(db):
-    print("Retrieving unsummarized games...")
-    game_ids = []
-    games_to_summarize = db.collection('games').where('is_summarized', '==', False).stream()
-
-    for game in games_to_summarize:
-        curr_dict = {
-            "game_id": game.id, 
-            "home_team_id": game.to_dict()["home_team_id"], 
-            "away_team_id": game.to_dict()["away_team_id"]
-        }
-        game_ids.append(curr_dict)
-
-    return game_ids
-
 # Scrape the box score data of a given game and save it to the database
 def get_single_game_boxscore_data(db, game_dict):
     print("Scraping box score data for game: " + game_dict['game_id'] + "...")
@@ -167,8 +151,10 @@ def generate_single_game_summary(db, boxscore_dict):
     boxscore_query_id = boxscore_dict['game_ref_id'] + "-" + away_team_abbrev + "-" + home_team_abbrev + "-boxscore"
     update_summarized_flag(db, 'boxscores', boxscore_query_id)
 
+# Generate the email contents for all summaries that have not been emailed yet along with the game ref ids
 def generate_email_contents(db):
     summaries_to_send = db.collection('summaries').where('email_sent', '==', False).stream()
+    game_ref_ids = []
     summary_email_sections = []
 
     for summary in summaries_to_send:
@@ -176,10 +162,15 @@ def generate_email_contents(db):
         game_title = f"{summary_doc['away_team']} vs {summary_doc['home_team']} Game Summary"
         summary_dict = {"game_title": game_title, "game_summary": summary_doc['summary_content']}
         summary_email_sections.append(summary_dict)
+        game_ref_ids.append(summary_doc['game_ref_id'])
 
-    return summary_email_sections
+    return game_ref_ids, summary_email_sections
 
+# Send an email with all the summaries that have not been emailed yet and set the
+# email_sent flag to True for the summaries that were sent
 def send_summary_email(db):
+    game_ref_ids, summary_email_sections = generate_email_contents(db)
+
     date = datetime.datetime.today().strftime("%A %B %d, %Y")
 
     smtp_server = "smtp.gmail.com"
@@ -194,9 +185,8 @@ def send_summary_email(db):
     template = env.get_template('summary_email_template.html')
     
     header = f"Here is a rundown of all the MLB action from {date}:\n\n"
-    email_sections = generate_email_contents(db)
 
-    html = template.render(header=header, sections=email_sections)
+    html = template.render(header=header, sections=summary_email_sections)
 
     msg = MIMEMultipart("alternative")
     msg['From'] = from_addr
@@ -212,9 +202,26 @@ def send_summary_email(db):
     server.sendmail(from_addr, to_addrs, msg.as_string())
     server.quit()
 
+    update_email_sent_flag(db, game_ref_ids)
 
 ####################################################################################################################################################
 # General helper functions #
+
+# Retrieves and returns a list of all games that have not yet been summarized 
+def get_unsummarized_games(db):
+    print("Retrieving unsummarized games...")
+    game_ids = []
+    games_to_summarize = db.collection('games').where('is_summarized', '==', False).stream()
+
+    for game in games_to_summarize:
+        curr_dict = {
+            "game_id": game.id, 
+            "home_team_id": game.to_dict()["home_team_id"], 
+            "away_team_id": game.to_dict()["away_team_id"]
+        }
+        game_ids.append(curr_dict)
+
+    return game_ids
 
 # Helper function to update the is_summarized flag for a game or boxscore
 # It is called after a summary is generated.
@@ -224,6 +231,15 @@ def update_summarized_flag(db, collection, query_id):
         doc_id = doc.id
         doc_ref = db.collection(collection).document(doc_id)
         doc_ref.update({'is_summarized': True})
+
+# Helper function to update the email_sent flag for summaries
+# It is called after an email is sent.
+def update_email_sent_flag(db, game_ref_ids):
+    summary_flags_to_update = db.collection('summaries').where('game_ref_id', 'in', game_ref_ids).stream()
+    for summary_doc in summary_flags_to_update:
+        summary_id = summary_doc.id
+        summary_doc_ref = db.collection('summaries').document(summary_id)
+        summary_doc_ref.update({'email_sent': True})
 
 ####################################################################################################################################################
 # SportsDigest-GPT Jobs #
