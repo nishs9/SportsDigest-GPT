@@ -1,5 +1,6 @@
 # Secrets, API Keys, Passwords, or other sensitive information.
 secrets/
+secret_keys.py
 
 # Test output files
 test_files/

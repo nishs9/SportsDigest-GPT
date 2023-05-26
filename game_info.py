@@ -1,6 +1,8 @@
 import requests
 import util
 import pandas as pd
+import openai
+import secret_keys
 from bs4 import BeautifulSoup
 
 def save_upcoming_game_info(db):
@@ -70,6 +72,7 @@ def get_single_game_boxscore_data(db, game_dict):
 
         df = pd.DataFrame(data, columns=columns)
 
+        #TODO: Remove writing to file once we are ready to deploy
         with open("test_files/test.txt", 'a') as f:
             f.write(df.to_string())
             f.write('\n\n')
@@ -91,10 +94,74 @@ def get_single_game_boxscore_data(db, game_dict):
     doc_ref = db.collection('boxscores').document(unique_boxscore_id)
     doc_ref.set(boxscore_data)
 
+def generate_all_game_summaries(db):
+    boxscores_to_summarize = db.collection('boxscores').where('is_summarized', '==', False).stream()
+
+    for boxscore in boxscores_to_summarize:
+        curr_dict = {
+            "boxscore_id": boxscore.id, 
+            "home_team_id": boxscore.to_dict()["home_team_id"], 
+            "away_team_id": boxscore.to_dict()["away_team_id"],
+            "game_ref_id": boxscore.to_dict()["game_ref_id"],
+            "boxscore_content": boxscore.to_dict()["boxscore_content"]
+        }
+        generate_single_game_summary(db, curr_dict)
+
+def generate_single_game_summary(db, boxscore_dict):
+    away_team = util.get_team_name_by_id(db, boxscore_dict['away_team_id'])
+    away_team_abbrev = util.get_team_abbrev_by_id(db, boxscore_dict['away_team_id'])
+    home_team = util.get_team_name_by_id(db, boxscore_dict['home_team_id'])
+    home_team_abbrev = util.get_team_abbrev_by_id(db, boxscore_dict['home_team_id'])
+    prompt = f"Give me a brief summary of a game between the {away_team} and {home_team} from the following box score. Avoid being overly verbose. Just provide a basic summary of the game, and some standout performers:\n\n"
+
+    openai.api_key = secret_keys.openai_api_key
+
+    response = openai.ChatCompletion.create(
+    model="gpt-3.5-turbo",
+    messages=[
+          {"role": "system", "content": "You are a helpful assistant that summarizes MLB boxscores."},
+          {"role": "user", "content": prompt + boxscore_dict['boxscore_content']},
+      ]
+    )
+    
+    summary = response.choices[0].message['content']
+
+    summary_data = {
+        'home_team': home_team,
+        'home_team_id': boxscore_dict['home_team_id'],
+        'away_team': away_team,
+        'away_team_id': boxscore_dict['away_team_id'],
+        'game_ref_id': boxscore_dict['game_ref_id'],
+        'summary_content': summary,
+        'email_sent': False
+    }
+    
+    unique_summary_id = boxscore_dict['game_ref_id'] + "-" + away_team_abbrev + "-" + home_team_abbrev + "-summary"
+
+    doc_ref = db.collection('summaries').document(unique_summary_id)
+    doc_ref.set(summary_data)
+
+    game_query_id = boxscore_dict['game_ref_id'] + "-" + away_team_abbrev + "-" + home_team_abbrev
+    update_summarized_flag(db, 'games', game_query_id)
+
+    boxscore_query_id = boxscore_dict['game_ref_id'] + "-" + away_team_abbrev + "-" + home_team_abbrev + "-boxscore"
+    update_summarized_flag(db, 'boxscores', boxscore_query_id)
+
+def update_summarized_flag(db, collection, query_id):
+    docs_ref = db.collection(collection).where('is_summarized', '==', False).stream()
+    for doc in docs_ref:
+        doc_id = doc.id
+        doc_ref = db.collection(collection).document(doc_id)
+        doc_ref.update({'is_summarized': True})
+
 def update_game_collection():
     db = util.initialize_firebase()
+    #TODO: Remove the clear_collection call once we're ready to deploy
     util.clear_collection(db, 'games')
     save_upcoming_game_info(db)
+
+def update_boxscore_collection():
+    db = util.initialize_firebase()
     game_ids = get_unsummarized_games(db)
     for game in game_ids:
         get_single_game_boxscore_data(db, game)
@@ -102,5 +169,7 @@ def update_game_collection():
 if __name__ == "__main__":
     #update_game_collection()
     #game_ids = get_unsummarized_games(util.initialize_firebase())
-    test = [{"game_id": "401471766", "home_team_id": "10", "away_team_id": "1"}]
-    get_single_game_boxscore_data(util.initialize_firebase(), test[0])
+    db = util.initialize_firebase()
+    # test = [{"game_id": "401471775", "home_team_id": "27", "away_team_id": "28"}]
+    # get_single_game_boxscore_data(db, test[0])
+    generate_all_game_summaries(db)
