@@ -10,13 +10,13 @@ def save_team_info(db):
     for team in data['sports'][0]['leagues'][0]['teams']:
         team_data = {
             'abbreviation': team['team']['abbreviation'],
-            'espn_id': team['team']['id'],
             'full_name': team['team']['displayName'],
             'location': team['team']['location'],
             'mascot': team['team']['name'],
         }
 
-        db.collection('teams').add(team_data)
+        doc_ref = db.collection('teams').document(team['team']['id'])
+        doc_ref.set(team_data)
 
 def update_team_collection():
     db = util.initialize_firebase()

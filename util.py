@@ -21,3 +21,17 @@ def clear_collection(db, collection_name):
 
     if deleted >= default_batch_size:
         return clear_collection(db, collection_name)
+
+def get_team_name_by_id(db, team_id):
+    team_doc_ref = db.collection('teams').document(team_id).get()
+    if team_doc_ref.exists:
+        return team_doc_ref.to_dict()['full_name']
+    else:
+        return None
+
+def get_team_abbrev_by_id(db, team_id):
+    team_doc_ref = db.collection('teams').document(team_id).get()
+    if team_doc_ref.exists:
+        return team_doc_ref.to_dict()['abbreviation']
+    else:
+        return None
