@@ -5,12 +5,14 @@ import openai
 import secret_keys
 from bs4 import BeautifulSoup
 
+# Retrieves information about all of today's games and saves it to the database
 def save_upcoming_game_info(db):
     url = "http://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard"
     response = requests.get(url)
     data = response.json()
 
     for game in data['events']:
+        print("Processing game: " + game['shortName'] + "...")
         game_short_name = game['shortName'].split(' @ ')
         unique_game_id = game['id'] + "-" + game_short_name[0] + "-" + game_short_name[1]
 
@@ -26,7 +28,9 @@ def save_upcoming_game_info(db):
         doc_ref = db.collection('games').document(unique_game_id)
         doc_ref.set(game_data)
 
+# Retrieves and returns a list of all games that have not yet been summarized 
 def get_unsummarized_games(db):
+    print("Retrieving unsummarized games...")
     game_ids = []
     games_to_summarize = db.collection('games').where('is_summarized', '==', False).stream()
 
@@ -40,7 +44,9 @@ def get_unsummarized_games(db):
 
     return game_ids
 
+# Scrape the box score data of a given game and save it to the database
 def get_single_game_boxscore_data(db, game_dict):
+    print("Scraping box score data for game: " + game_dict['game_id'] + "...")
     game_id = game_dict['game_id'].split('-')[0]
 
     away_team_full_name = util.get_team_name_by_id(db, game_dict['away_team_id'])
@@ -57,6 +63,11 @@ def get_single_game_boxscore_data(db, game_dict):
     soup = BeautifulSoup(response.text, 'html.parser')
 
     tables = soup.find_all('table')
+
+    #TODO: Remove writing to file once we are ready to deploy
+    with open("test_files/test.txt", 'w') as f:
+        f.write(url)
+        f.write('\n\n')
 
     boxscore_tables = ""
     for i, table in enumerate(tables):
@@ -94,10 +105,12 @@ def get_single_game_boxscore_data(db, game_dict):
     doc_ref = db.collection('boxscores').document(unique_boxscore_id)
     doc_ref.set(boxscore_data)
 
+# Generate summaries for all unsummarized games in the database
 def generate_all_game_summaries(db):
     boxscores_to_summarize = db.collection('boxscores').where('is_summarized', '==', False).stream()
 
     for boxscore in boxscores_to_summarize:
+        print("Generating summary for boxscore: " + boxscore.id + "...")
         curr_dict = {
             "boxscore_id": boxscore.id, 
             "home_team_id": boxscore.to_dict()["home_team_id"], 
@@ -107,7 +120,9 @@ def generate_all_game_summaries(db):
         }
         generate_single_game_summary(db, curr_dict)
 
+# Generate a summary for a single game with the GPT-3.5 model and save it to the database
 def generate_single_game_summary(db, boxscore_dict):
+    print("Generating summary for boxscore: " + boxscore_dict['boxscore_id'] + "...")
     away_team = util.get_team_name_by_id(db, boxscore_dict['away_team_id'])
     away_team_abbrev = util.get_team_abbrev_by_id(db, boxscore_dict['away_team_id'])
     home_team = util.get_team_name_by_id(db, boxscore_dict['home_team_id'])
@@ -147,6 +162,8 @@ def generate_single_game_summary(db, boxscore_dict):
     boxscore_query_id = boxscore_dict['game_ref_id'] + "-" + away_team_abbrev + "-" + home_team_abbrev + "-boxscore"
     update_summarized_flag(db, 'boxscores', boxscore_query_id)
 
+# Helper function to update the is_summarized flag for a game or boxscore
+# It is called after a summary is generated.
 def update_summarized_flag(db, collection, query_id):
     docs_ref = db.collection(collection).where('is_summarized', '==', False).stream()
     for doc in docs_ref:
@@ -156,20 +173,30 @@ def update_summarized_flag(db, collection, query_id):
 
 def update_game_collection():
     db = util.initialize_firebase()
-    #TODO: Remove the clear_collection call once we're ready to deploy
-    util.clear_collection(db, 'games')
     save_upcoming_game_info(db)
 
-def update_boxscore_collection():
+def update_boxscore_collection_generate_summaries():
     db = util.initialize_firebase()
     game_ids = get_unsummarized_games(db)
     for game in game_ids:
         get_single_game_boxscore_data(db, game)
+    generate_all_game_summaries(db)
+
+def full_test_flow():
+    db = util.initialize_firebase()
+    util.clear_collection(db, 'games')
+    util.clear_collection(db, 'boxscores')
+    util.clear_collection(db, 'summaries')
+    save_upcoming_game_info(db)
+    game_ids = get_unsummarized_games(db)
+    for game in game_ids:
+        get_single_game_boxscore_data(db, game)
+    generate_all_game_summaries(db)
 
 if __name__ == "__main__":
     #update_game_collection()
     #game_ids = get_unsummarized_games(util.initialize_firebase())
-    db = util.initialize_firebase()
+    full_test_flow()
     # test = [{"game_id": "401471775", "home_team_id": "27", "away_team_id": "28"}]
     # get_single_game_boxscore_data(db, test[0])
-    generate_all_game_summaries(db)
+    #generate_all_game_summaries(db)
