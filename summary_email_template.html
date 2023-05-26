@@ -1,0 +1,10 @@
+<html>
+  <head></head>
+  <body>
+    <h2>{{ header }}</h2>
+    {% for section in sections %}
+      <h3>{{ section.game_title }}</h3>
+      <p>{{ section.game_summary }}</p>
+    {% endfor %}
+  </body>
+</html>

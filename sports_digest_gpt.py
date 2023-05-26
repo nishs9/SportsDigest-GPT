@@ -1,9 +1,14 @@
 import requests
-import util
+import util_functions as util
 import pandas as pd
 import openai
 import secret_keys
+import datetime
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from bs4 import BeautifulSoup
+from jinja2 import Environment, FileSystemLoader
 
 # Retrieves information about all of today's games and saves it to the database
 def save_upcoming_game_info(db):
@@ -162,6 +167,55 @@ def generate_single_game_summary(db, boxscore_dict):
     boxscore_query_id = boxscore_dict['game_ref_id'] + "-" + away_team_abbrev + "-" + home_team_abbrev + "-boxscore"
     update_summarized_flag(db, 'boxscores', boxscore_query_id)
 
+def generate_email_contents(db):
+    summaries_to_send = db.collection('summaries').where('email_sent', '==', False).stream()
+    summary_email_sections = []
+
+    for summary in summaries_to_send:
+        summary_doc = summary.to_dict()
+        game_title = f"{summary_doc['away_team']} vs {summary_doc['home_team']} Game Summary"
+        summary_dict = {"game_title": game_title, "game_summary": summary_doc['summary_content']}
+        summary_email_sections.append(summary_dict)
+
+    return summary_email_sections
+
+def send_summary_email(db):
+    date = datetime.datetime.today().strftime("%A %B %d, %Y")
+
+    smtp_server = "smtp.gmail.com"
+    smtp_port = 587
+    username = secret_keys.from_email
+    password = secret_keys.from_email_password
+    from_addr = secret_keys.from_email
+    to_addrs = [secret_keys.to_email]
+
+    file_loader = FileSystemLoader('.')
+    env = Environment(loader=file_loader)
+    template = env.get_template('summary_email_template.html')
+    
+    header = f"Here is a rundown of all the MLB action from {date}:\n\n"
+    email_sections = generate_email_contents(db)
+
+    html = template.render(header=header, sections=email_sections)
+
+    msg = MIMEMultipart("alternative")
+    msg['From'] = from_addr
+    msg['To'] = ', '.join(to_addrs)
+    msg['Subject'] = f'SportsDigest-GPT Summary for {date}'
+
+    html_part = MIMEText(html, 'html')
+    msg.attach(html_part)
+
+    server = smtplib.SMTP(smtp_server, smtp_port)
+    server.starttls()
+    server.login(username, password)
+    server.sendmail(from_addr, to_addrs, msg.as_string())
+    server.quit()
+
+
+####################################################################################################################################################
+# General helper functions #
+
 # Helper function to update the is_summarized flag for a game or boxscore
 # It is called after a summary is generated.
 def update_summarized_flag(db, collection, query_id):
@@ -171,17 +225,29 @@ def update_summarized_flag(db, collection, query_id):
         doc_ref = db.collection(collection).document(doc_id)
         doc_ref.update({'is_summarized': True})
 
-def update_game_collection():
+####################################################################################################################################################
+# SportsDigest-GPT Jobs #
+
+# Function that saves the day's upcoming games to the database
+def game_info_retrieval_job():
     db = util.initialize_firebase()
     save_upcoming_game_info(db)
 
-def update_boxscore_collection_generate_summaries():
+# Function that generates game summaries from boxscores and 
+# sends them as an email blast
+def summary_generator_sender_job():
     db = util.initialize_firebase()
     game_ids = get_unsummarized_games(db)
     for game in game_ids:
         get_single_game_boxscore_data(db, game)
     generate_all_game_summaries(db)
+    send_summary_email(db)
 
+####################################################################################################################################################
+# Testing methods #
+
+# Full job flow for testing purposes only
+####--- WILL DELETE ALL DATA IN THE DATABASE ---####
 def full_test_flow():
     db = util.initialize_firebase()
     util.clear_collection(db, 'games')
@@ -193,10 +259,9 @@ def full_test_flow():
         get_single_game_boxscore_data(db, game)
     generate_all_game_summaries(db)
 
+####################################################################################################################################################    
+
 if __name__ == "__main__":
-    #update_game_collection()
-    #game_ids = get_unsummarized_games(util.initialize_firebase())
-    full_test_flow()
-    # test = [{"game_id": "401471775", "home_team_id": "27", "away_team_id": "28"}]
-    # get_single_game_boxscore_data(db, test[0])
-    #generate_all_game_summaries(db)
+    #full_test_flow()
+    send_summary_email(util.initialize_firebase())
+    pass
