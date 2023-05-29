@@ -137,7 +137,9 @@ def generate_single_game_summary(db, boxscore_dict):
         'away_team_id': boxscore_dict['away_team_id'],
         'game_ref_id': boxscore_dict['game_ref_id'],
         'summary_content': summary,
-        'email_sent': False
+        'email_sent': False,
+        'prompt_tokens': response['usage']['prompt_tokens'],
+        'completion_tokens': response['usage']['completion_tokens']
     }
     
     unique_summary_id = boxscore_dict['game_ref_id'] + "-" + away_team_abbrev + "-" + home_team_abbrev + "-summary"
@@ -241,6 +243,13 @@ def update_email_sent_flag(db, game_ref_ids):
         summary_doc_ref = db.collection('summaries').document(summary_id)
         summary_doc_ref.update({'email_sent': True})
 
+# *WARNING** CLEARS ALL DATA FROM THE GAMES, BOXSCORES, AND SUMMARIIES COLLECTIONS
+def clear_main_collections():
+    db = util.initialize_firebase()
+    util.clear_collection(db, 'games')
+    util.clear_collection(db, 'boxscores')
+    util.clear_collection(db, 'summaries')
+
 ####################################################################################################################################################
 # SportsDigest-GPT Jobs #
 
@@ -274,10 +283,13 @@ def full_test_flow():
     for game in game_ids:
         get_single_game_boxscore_data(db, game)
     generate_all_game_summaries(db)
+    send_summary_email(db)
 
 ####################################################################################################################################################    
 
 if __name__ == "__main__":
     #full_test_flow()
-    send_summary_email(util.initialize_firebase())
+    #send_summary_email(util.initialize_firebase())
+    #clear_main_collections()
+    game_info_retrieval_job()
     pass

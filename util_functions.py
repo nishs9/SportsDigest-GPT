@@ -4,9 +4,12 @@ from firebase_admin import firestore
 
 default_batch_size = 30
 
-def initialize_firebase():
+def initialize_firebase(app_name=None):
     cred = credentials.Certificate("secrets/sportsdigest-gpt-firebase-adminsdk-mccm0-e20975b026.json")
-    firebase_admin.initialize_app(cred)
+    if app_name == None:
+        firebase_admin.initialize_app(cred)
+    else:
+        firebase_admin.initialize_app(cred, name=app_name)
     return firestore.client()
 
 def clear_collection(db, collection_name):
