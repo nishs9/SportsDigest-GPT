@@ -139,7 +139,7 @@ def generate_all_game_summaries(db):
         generate_single_game_summary(db, curr_dict)
 
 # Generate a summary for a single game with the GPT-3.5 model and save it to the database
-def generate_single_game_summary(db, boxscore_dict):
+def generate_single_game_summary(db, boxscore_dict, debug_mode=False):
     print("Generating summary for boxscore: " + boxscore_dict['boxscore_id'] + "...")
     away_team = util.get_team_name_by_id(db, boxscore_dict['away_team_id'])
     away_team_abbrev = util.get_team_abbrev_by_id(db, boxscore_dict['away_team_id'])
@@ -176,11 +176,12 @@ def generate_single_game_summary(db, boxscore_dict):
     doc_ref = db.collection('summaries').document(unique_summary_id)
     doc_ref.set(summary_data)
 
-    game_query_id = boxscore_dict['game_ref_id'] + "-" + away_team_abbrev + "-" + home_team_abbrev
-    update_summarized_flag(db, 'games', game_query_id)
+    if debug_mode == False:
+        game_query_id = boxscore_dict['game_ref_id'] + "-" + away_team_abbrev + "-" + home_team_abbrev
+        update_summarized_flag(db, 'games', game_query_id)
 
-    boxscore_query_id = boxscore_dict['game_ref_id'] + "-" + away_team_abbrev + "-" + home_team_abbrev + "-boxscore"
-    update_summarized_flag(db, 'boxscores', boxscore_query_id)
+        boxscore_query_id = boxscore_dict['game_ref_id'] + "-" + away_team_abbrev + "-" + home_team_abbrev + "-boxscore"
+        update_summarized_flag(db, 'boxscores', boxscore_query_id)
 
 # Generate the email contents for all summaries that have not been emailed yet along with the game ref ids
 def generate_email_contents(db):
@@ -199,7 +200,7 @@ def generate_email_contents(db):
 
 # Send an email with all the summaries that have not been emailed yet and set the
 # email_sent flag to True for the summaries that were sent
-def send_summary_email(db):
+def send_summary_email(db, debug_mode=False):
     game_ref_ids, summary_email_sections = generate_email_contents(db)
 
     date = datetime.datetime.today().strftime("%A %B %d, %Y")
@@ -233,7 +234,8 @@ def send_summary_email(db):
     server.sendmail(from_addr, to_addrs, msg.as_string())
     server.quit()
 
-    update_email_sent_flag(db, game_ref_ids)
+    if debug_mode == False:
+        update_email_sent_flag(db, game_ref_ids)
 
 ####################################################################################################################################################
 # General helper and debug functions #
