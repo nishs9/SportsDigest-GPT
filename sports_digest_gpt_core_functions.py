@@ -10,6 +10,25 @@ from email.mime.text import MIMEText
 from bs4 import BeautifulSoup
 from jinja2 import Environment, FileSystemLoader
 
+####################################################################################################################################################
+# SportsDigest-GPT Core Jobs #
+
+# Function that saves the day's upcoming games to the database
+def game_info_retrieval_job(db):
+    save_upcoming_game_info(db)
+
+# Function that generates game summaries from boxscores and 
+# sends them as an email blast
+def summary_generator_sender_job(db):
+    game_ids = get_unsummarized_games(db)
+    for game in game_ids:
+        get_single_game_boxscore_data(db, game)
+    generate_all_game_summaries(db)
+    send_summary_email(db)
+
+####################################################################################################################################################
+# SportsDigest-GPT Sub-Jobs #
+
 # Retrieves information about all of today's games and saves it to the database
 def save_upcoming_game_info(db):
     url = "http://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard"
@@ -32,6 +51,22 @@ def save_upcoming_game_info(db):
 
         doc_ref = db.collection('games').document(unique_game_id)
         doc_ref.set(game_data)
+
+# Retrieves and returns a list of all games that have not yet been summarized 
+def get_unsummarized_games(db):
+    print("Retrieving unsummarized games...")
+    game_ids = []
+    games_to_summarize = db.collection('games').where('is_summarized', '==', False).stream()
+
+    for game in games_to_summarize:
+        curr_dict = {
+            "game_id": game.id, 
+            "home_team_id": game.to_dict()["home_team_id"], 
+            "away_team_id": game.to_dict()["away_team_id"]
+        }
+        game_ids.append(curr_dict)
+
+    return game_ids
 
 # Scrape the box score data of a given game and save it to the database
 def get_single_game_boxscore_data(db, game_dict):
@@ -201,23 +236,7 @@ def send_summary_email(db):
     update_email_sent_flag(db, game_ref_ids)
 
 ####################################################################################################################################################
-# General helper functions #
-
-# Retrieves and returns a list of all games that have not yet been summarized 
-def get_unsummarized_games(db):
-    print("Retrieving unsummarized games...")
-    game_ids = []
-    games_to_summarize = db.collection('games').where('is_summarized', '==', False).stream()
-
-    for game in games_to_summarize:
-        curr_dict = {
-            "game_id": game.id, 
-            "home_team_id": game.to_dict()["home_team_id"], 
-            "away_team_id": game.to_dict()["away_team_id"]
-        }
-        game_ids.append(curr_dict)
-
-    return game_ids
+# General helper and debug functions #
 
 # Helper function to update the is_summarized flag for a game or boxscore
 # It is called after a summary is generated.
@@ -239,7 +258,7 @@ def update_email_sent_flag(db, game_ref_ids):
 
 # *WARNING** CLEARS ALL DATA FROM THE GAMES, BOXSCORES, AND SUMMARIIES COLLECTIONS
 def clear_main_collections():
-    db = util.initialize_firebase()
+    db = util.initialize_firebase("local")
     util.clear_collection(db, 'games')
     util.clear_collection(db, 'boxscores')
     util.clear_collection(db, 'summaries')
@@ -247,29 +266,11 @@ def clear_main_collections():
 # Full job flow for testing purposes only
 ####--- WILL DELETE ALL DATA IN THE DATABASE ---####
 def full_test_flow():
-    db = util.initialize_firebase()
+    db = util.initialize_firebase("local")
     util.clear_collection(db, 'games')
     util.clear_collection(db, 'boxscores')
     util.clear_collection(db, 'summaries')
     save_upcoming_game_info(db)
-    game_ids = get_unsummarized_games(db)
-    for game in game_ids:
-        get_single_game_boxscore_data(db, game)
-    generate_all_game_summaries(db)
-    send_summary_email(db)
-
-####################################################################################################################################################
-# SportsDigest-GPT Core Jobs #
-
-# Function that saves the day's upcoming games to the database
-def game_info_retrieval_job():
-    db = util.initialize_firebase()
-    save_upcoming_game_info(db)
-
-# Function that generates game summaries from boxscores and 
-# sends them as an email blast
-def summary_generator_sender_job():
-    db = util.initialize_firebase()
     game_ids = get_unsummarized_games(db)
     for game in game_ids:
         get_single_game_boxscore_data(db, game)
@@ -282,6 +283,6 @@ if __name__ == "__main__":
     #full_test_flow()
     #send_summary_email(util.initialize_firebase())
     #clear_main_collections()
-    #game_info_retrieval_job()
-    summary_generator_sender_job()
+    game_info_retrieval_job(util.initialize_firebase("local"), app_context="gcp")
+    #summary_generator_sender_job()
     pass
