@@ -53,11 +53,6 @@ def get_single_game_boxscore_data(db, game_dict):
 
     tables = soup.find_all('table')
 
-    #TODO: Remove writing to file once we are ready to deploy
-    with open("test_files/test.txt", 'w') as f:
-        f.write(url)
-        f.write('\n\n')
-
     boxscore_tables = ""
     for i, table in enumerate(tables):
         if i == 0:
@@ -99,7 +94,6 @@ def generate_all_game_summaries(db):
     boxscores_to_summarize = db.collection('boxscores').where('is_summarized', '==', False).stream()
 
     for boxscore in boxscores_to_summarize:
-        print("Generating summary for boxscore: " + boxscore.id + "...")
         curr_dict = {
             "boxscore_id": boxscore.id, 
             "home_team_id": boxscore.to_dict()["home_team_id"], 
@@ -250,8 +244,22 @@ def clear_main_collections():
     util.clear_collection(db, 'boxscores')
     util.clear_collection(db, 'summaries')
 
+# Full job flow for testing purposes only
+####--- WILL DELETE ALL DATA IN THE DATABASE ---####
+def full_test_flow():
+    db = util.initialize_firebase()
+    util.clear_collection(db, 'games')
+    util.clear_collection(db, 'boxscores')
+    util.clear_collection(db, 'summaries')
+    save_upcoming_game_info(db)
+    game_ids = get_unsummarized_games(db)
+    for game in game_ids:
+        get_single_game_boxscore_data(db, game)
+    generate_all_game_summaries(db)
+    send_summary_email(db)
+
 ####################################################################################################################################################
-# SportsDigest-GPT Jobs #
+# SportsDigest-GPT Core Jobs #
 
 # Function that saves the day's upcoming games to the database
 def game_info_retrieval_job():
@@ -269,27 +277,11 @@ def summary_generator_sender_job():
     send_summary_email(db)
 
 ####################################################################################################################################################
-# Testing methods #
-
-# Full job flow for testing purposes only
-####--- WILL DELETE ALL DATA IN THE DATABASE ---####
-def full_test_flow():
-    db = util.initialize_firebase()
-    util.clear_collection(db, 'games')
-    util.clear_collection(db, 'boxscores')
-    util.clear_collection(db, 'summaries')
-    save_upcoming_game_info(db)
-    game_ids = get_unsummarized_games(db)
-    for game in game_ids:
-        get_single_game_boxscore_data(db, game)
-    generate_all_game_summaries(db)
-    send_summary_email(db)
-
-####################################################################################################################################################    
 
 if __name__ == "__main__":
     #full_test_flow()
     #send_summary_email(util.initialize_firebase())
     #clear_main_collections()
-    game_info_retrieval_job()
+    #game_info_retrieval_job()
+    summary_generator_sender_job()
     pass
