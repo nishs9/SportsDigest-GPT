@@ -3,54 +3,62 @@ import util_functions as util
 import pandas as pd
 import openai
 import secret_keys
-import datetime
+from datetime import datetime, timedelta
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from bs4 import BeautifulSoup
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 ####################################################################################################################################################
 # SportsDigest-GPT Core Jobs #
 
-# Function that saves the day's upcoming games to the database
+# Retrieves information about all of today's games and saves it to the database
 def game_info_retrieval_job(db):
-    save_upcoming_game_info(db)
+    url = "http://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard"
+    response = requests.get(url)
+    data = response.json()
+    games_today = save_game_info(db, data['events'])
+    if games_today:
+        print("Today's MLB game info retrieved and saved to db successfully...")
+    else:
+        print("There are no MLB games today...")
 
 # Function that generates game summaries from boxscores and 
 # sends them as an email blast
 def summary_generator_sender_job(db):
     game_ids = get_unsummarized_games(db)
-    for game in game_ids:
-        get_single_game_boxscore_data(db, game)
-    generate_all_game_summaries(db)
-    send_summary_email(db)
+    should_generate_summaries = get_all_boxscore_data(db, game_ids)
+    if should_generate_summaries:
+        generate_all_game_summaries(db, False)
+        send_summary_email(db, False)
+    else:
+        print("No games have completed yet today and so no summaries were generated...")
 
 ####################################################################################################################################################
 # SportsDigest-GPT Sub-Jobs #
 
-# Retrieves information about all of today's games and saves it to the database
-def save_upcoming_game_info(db):
-    url = "http://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard"
-    response = requests.get(url)
-    data = response.json()
+def save_game_info(db, events):
+    if len(events) == 0:
+        return False
+    else:
+        for game in events:
+            print("Processing game: " + game['shortName'] + "...")
+            game_short_name = game['shortName'].split(' @ ')
+            unique_game_id = game['id'] + "-" + game_short_name[0] + "-" + game_short_name[1]
 
-    for game in data['events']:
-        print("Processing game: " + game['shortName'] + "...")
-        game_short_name = game['shortName'].split(' @ ')
-        unique_game_id = game['id'] + "-" + game_short_name[0] + "-" + game_short_name[1]
+            game_data = {
+                'home_team': game['competitions'][0]['competitors'][0]['team']['displayName'],
+                'home_team_id': game['competitions'][0]['competitors'][0]['team']['id'],
+                'away_team': game['competitions'][0]['competitors'][1]['team']['displayName'],
+                'away_team_id': game['competitions'][0]['competitors'][1]['team']['id'],
+                'short_detail': game['status']['type']['shortDetail'],
+                'is_summarized': False,
+            }
 
-        game_data = {
-            'home_team': game['competitions'][0]['competitors'][0]['team']['displayName'],
-            'home_team_id': game['competitions'][0]['competitors'][0]['team']['id'],
-            'away_team': game['competitions'][0]['competitors'][1]['team']['displayName'],
-            'away_team_id': game['competitions'][0]['competitors'][1]['team']['id'],
-            'short_detail': game['status']['type']['shortDetail'],
-            'is_summarized': False,
-        }
-
-        doc_ref = db.collection('games').document(unique_game_id)
-        doc_ref.set(game_data)
+            doc_ref = db.collection('games').document(unique_game_id)
+            doc_ref.set(game_data)
+        return True
 
 # Retrieves and returns a list of all games that have not yet been summarized 
 def get_unsummarized_games(db):
@@ -67,6 +75,16 @@ def get_unsummarized_games(db):
         game_ids.append(curr_dict)
 
     return game_ids
+
+def get_all_boxscore_data(db, game_ids):
+    if len(game_ids) == 0:
+        print("No games have completed yet and so no boxscores were saved...")
+        return False
+    else:
+        print("Retrieving boxscore data for all games...")
+        for game in game_ids:
+            get_single_game_boxscore_data(db, game)
+        return True
 
 # Scrape the box score data of a given game and save it to the database
 def get_single_game_boxscore_data(db, game_dict):
@@ -125,7 +143,7 @@ def get_single_game_boxscore_data(db, game_dict):
     doc_ref.set(boxscore_data)
 
 # Generate summaries for all unsummarized games in the database
-def generate_all_game_summaries(db):
+def generate_all_game_summaries(db, debug_mode):
     boxscores_to_summarize = db.collection('boxscores').where('is_summarized', '==', False).stream()
 
     for boxscore in boxscores_to_summarize:
@@ -136,10 +154,10 @@ def generate_all_game_summaries(db):
             "game_ref_id": boxscore.to_dict()["game_ref_id"],
             "boxscore_content": boxscore.to_dict()["boxscore_content"]
         }
-        generate_single_game_summary(db, curr_dict)
+        generate_single_game_summary(db, curr_dict, debug_mode)
 
 # Generate a summary for a single game with the GPT-3.5 model and save it to the database
-def generate_single_game_summary(db, boxscore_dict, debug_mode=False):
+def generate_single_game_summary(db, boxscore_dict, debug_mode):
     print("Generating summary for boxscore: " + boxscore_dict['boxscore_id'] + "...")
     away_team = util.get_team_name_by_id(db, boxscore_dict['away_team_id'])
     away_team_abbrev = util.get_team_abbrev_by_id(db, boxscore_dict['away_team_id'])
@@ -177,11 +195,8 @@ def generate_single_game_summary(db, boxscore_dict, debug_mode=False):
     doc_ref.set(summary_data)
 
     if debug_mode == False:
-        game_query_id = boxscore_dict['game_ref_id'] + "-" + away_team_abbrev + "-" + home_team_abbrev
-        update_summarized_flag(db, 'games', game_query_id)
-
-        boxscore_query_id = boxscore_dict['game_ref_id'] + "-" + away_team_abbrev + "-" + home_team_abbrev + "-boxscore"
-        update_summarized_flag(db, 'boxscores', boxscore_query_id)
+        update_summarized_flag(db, 'games')
+        update_summarized_flag(db, 'boxscores')
 
 # Generate the email contents for all summaries that have not been emailed yet along with the game ref ids
 def generate_email_contents(db):
@@ -200,10 +215,11 @@ def generate_email_contents(db):
 
 # Send an email with all the summaries that have not been emailed yet and set the
 # email_sent flag to True for the summaries that were sent
-def send_summary_email(db, debug_mode=False):
+def send_summary_email(db, debug_mode):
     game_ref_ids, summary_email_sections = generate_email_contents(db)
 
-    date = datetime.datetime.today().strftime("%A %B %d, %Y")
+    yesterday = datetime.now() - timedelta(days=1)
+    date = yesterday.strftime("%A %B %d, %Y")
 
     smtp_server = "smtp.gmail.com"
     smtp_port = 587
@@ -213,7 +229,7 @@ def send_summary_email(db, debug_mode=False):
     to_addrs = [secret_keys.to_email]
 
     file_loader = FileSystemLoader('.')
-    env = Environment(loader=file_loader)
+    env = Environment(loader=file_loader, autoescape=select_autoescape(['html']))
     template = env.get_template('summary_email_template.html')
     
     header = f"Here is a rundown of all the MLB action from {date}:\n\n"
@@ -242,7 +258,7 @@ def send_summary_email(db, debug_mode=False):
 
 # Helper function to update the is_summarized flag for a game or boxscore
 # It is called after a summary is generated.
-def update_summarized_flag(db, collection, query_id):
+def update_summarized_flag(db, collection):
     docs_ref = db.collection(collection).where('is_summarized', '==', False).stream()
     for doc in docs_ref:
         doc_id = doc.id
@@ -265,26 +281,26 @@ def clear_main_collections():
     util.clear_collection(db, 'boxscores')
     util.clear_collection(db, 'summaries')
 
-# Full job flow for testing purposes only
-####--- WILL DELETE ALL DATA IN THE DATABASE ---####
-def full_test_flow():
+# Full job flow for testing purposes
+def full_test_flow(with_delete):
     db = util.initialize_firebase("local")
-    util.clear_collection(db, 'games')
-    util.clear_collection(db, 'boxscores')
-    util.clear_collection(db, 'summaries')
-    save_upcoming_game_info(db)
+    if with_delete:
+        ####-WILL DELETE ALL DATA IN THE DATABASE-####
+        util.clear_collection(db, 'games')
+        util.clear_collection(db, 'boxscores')
+        util.clear_collection(db, 'summaries')
+    game_info_retrieval_job(db)
     game_ids = get_unsummarized_games(db)
-    for game in game_ids:
-        get_single_game_boxscore_data(db, game)
-    generate_all_game_summaries(db)
-    send_summary_email(db)
+    get_all_boxscore_data(db, game_ids)
+    generate_all_game_summaries(db, True)
+    send_summary_email(db, True)
 
 ####################################################################################################################################################
 
 if __name__ == "__main__":
-    #full_test_flow()
-    #send_summary_email(util.initialize_firebase())
+    full_test_flow(False)
+    #send_summary_email(util.initialize_firebase(), True)
     #clear_main_collections()
-    game_info_retrieval_job(util.initialize_firebase("local"), app_context="gcp")
+    #game_info_retrieval_job(util.initialize_firebase("local"), app_context="gcp")
     #summary_generator_sender_job()
     pass

@@ -1,5 +1,5 @@
 import requests
-import util
+import util_functions as util
 
 def save_team_info(db):
     team_info_url = "http://site.api.espn.com/apis/site/v2/sports/baseball/mlb/teams"
