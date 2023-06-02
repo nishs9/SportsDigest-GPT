@@ -102,11 +102,6 @@ def get_single_game_boxscore_data(db, game_dict):
 
         df = pd.DataFrame(data, columns=columns)
 
-        #TODO: Remove writing to file once we are ready to deploy
-        with open("test_files/test.txt", 'a') as f:
-            f.write(df.to_string())
-            f.write('\n\n')
-
         boxscore_tables += df.to_string(index=False) + "\n\n"
 
     boxscore_data = {
