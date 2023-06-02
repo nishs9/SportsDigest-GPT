@@ -3,8 +3,8 @@ import util_functions as util
 import pandas as pd
 import openai
 import secret_keys
-import datetime
 import smtplib
+from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from bs4 import BeautifulSoup
@@ -202,7 +202,8 @@ def generate_email_contents(db):
 def send_summary_email(db):
     game_ref_ids, summary_email_sections = generate_email_contents(db)
 
-    date = datetime.datetime.today().strftime("%A %B %d, %Y")
+    yesterday = datetime.now() - timedelta(days=1)
+    date = yesterday.strftime("%A %B %d, %Y")
 
     smtp_server = "smtp.gmail.com"
     smtp_port = 587
@@ -283,6 +284,9 @@ if __name__ == "__main__":
     #full_test_flow()
     #send_summary_email(util.initialize_firebase())
     #clear_main_collections()
-    game_info_retrieval_job(util.initialize_firebase("local"), app_context="gcp")
+    #game_info_retrieval_job(util.initialize_firebase("local"), app_context="gcp")
     #summary_generator_sender_job()
+    yesterday = datetime.now() - timedelta(days=1)
+    date = yesterday.strftime("%A %B %d, %Y")
+    print(date)
     pass
