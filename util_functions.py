@@ -2,6 +2,7 @@ import firebase_admin
 import secret_keys
 import json
 import traceback
+import logging
 from firebase_admin import credentials
 from firebase_admin import firestore
 from google.cloud import secretmanager
@@ -28,7 +29,7 @@ def clear_collection(db, collection_name):
     deleted = 0
 
     for doc in docs:
-        print(f"Deleting doc {doc.id} => {doc.to_dict()}")
+        logging.info(f"Deleting doc {doc.id} => {doc.to_dict()}")
         doc.reference.delete()
         deleted = deleted + 1
 
@@ -50,7 +51,7 @@ def get_team_abbrev_by_id(db, team_id):
         return None
     
 def error_handler(exception):
-    print(f"An error occurred: {type(exception).__name__}")
-    print(f"Error message: {str(exception)}")
-    print("Here is the traceback:")
+    logging.error(f"An error occurred: {type(exception).__name__}")
+    logging.error(f"Error message: {str(exception)}")
+    logging.error("Here is the traceback:")
     traceback.print_exc()

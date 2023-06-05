@@ -9,14 +9,14 @@ def setup_argparse():
     args = parser.parse_args()
     return args
 
-def zip_codebase(path, ziph):
-    for root, ___, files in os.walk(path):
+def zip_codebase(ziph, custom_zip_path='.'):
+    for root, ___, files in os.walk(custom_zip_path):
         for file in files:
             if file.endswith('.zip'):
                 continue 
             file_path = os.path.join(root, file)
-            if path != '.':
-                file_path = os.path.relpath(file_path, path)
+            if custom_zip_path != '.':
+                file_path = os.path.relpath(file_path, custom_zip_path)
             ziph.write(file_path)
 
 def upload_to_bucket(blob_name, path_to_file, bucket_name):
@@ -29,6 +29,6 @@ def upload_to_bucket(blob_name, path_to_file, bucket_name):
 if __name__ == '__main__':
     args = setup_argparse()
     zipf = zipfile.ZipFile(args.filename, 'w', zipfile.ZIP_DEFLATED)
-    zip_codebase('.', zipf)
+    zip_codebase(zipf)
     zipf.close()
     upload_to_bucket(args.filename, args.filename, 'sportsdigest-gpt-code-bucket')

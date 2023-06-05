@@ -3,12 +3,13 @@ import util_functions as util
 import pandas as pd
 import openai
 import secret_keys
-from datetime import datetime, timedelta
+import logging
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from bs4 import BeautifulSoup
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from datetime import datetime, timedelta
 
 ####################################################################################################################################################
 # SportsDigest-GPT Core Jobs #
@@ -20,9 +21,9 @@ def game_info_retrieval_job(db):
     data = response.json()
     games_today = save_game_info(db, data['events'])
     if games_today:
-        print("Today's MLB game info retrieved and saved to db successfully...")
+        logging.info("Today's MLB game info retrieved and saved to db successfully...")
     else:
-        print("There are no MLB games today...")
+        logging.warning("There are no MLB games today...")
 
 # Function that generates game summaries from boxscores and 
 # sends them as an email blast
@@ -33,7 +34,7 @@ def summary_generator_sender_job(db):
         generate_all_game_summaries(db, False)
         send_summary_email(db, False)
     else:
-        print("No games have completed yet today and so no summaries were generated...")
+        logging.warning("No games have completed yet today and so no summaries were generated...")
 
 ####################################################################################################################################################
 # SportsDigest-GPT Sub-Jobs #
@@ -43,7 +44,7 @@ def save_game_info(db, events):
         return False
     else:
         for game in events:
-            print("Processing game: " + game['shortName'] + "...")
+            logging.info("Processing game: " + game['shortName'] + "...")
             game_short_name = game['shortName'].split(' @ ')
             unique_game_id = game['id'] + "-" + game_short_name[0] + "-" + game_short_name[1]
 
@@ -62,7 +63,7 @@ def save_game_info(db, events):
 
 # Retrieves and returns a list of all games that have not yet been summarized 
 def get_unsummarized_games(db):
-    print("Retrieving unsummarized games...")
+    logging.info("Retrieving unsummarized games...")
     game_ids = []
     games_to_summarize = db.collection('games').where('is_summarized', '==', False).stream()
 
@@ -78,17 +79,17 @@ def get_unsummarized_games(db):
 
 def get_all_boxscore_data(db, game_ids):
     if len(game_ids) == 0:
-        print("No games have completed yet and so no boxscores were saved...")
+        logging.warning("No games have completed yet and so no boxscores were saved...")
         return False
     else:
-        print("Retrieving boxscore data for all games...")
+        logging.info("Retrieving boxscore data for all games...")
         for game in game_ids:
             get_single_game_boxscore_data(db, game)
         return True
 
 # Scrape the box score data of a given game and save it to the database
 def get_single_game_boxscore_data(db, game_dict):
-    print("Scraping box score data for game: " + game_dict['game_id'] + "...")
+    logging.info("Scraping box score data for game: " + game_dict['game_id'] + "...")
     game_id = game_dict['game_id'].split('-')[0]
 
     away_team_full_name = util.get_team_name_by_id(db, game_dict['away_team_id'])
@@ -158,7 +159,7 @@ def generate_all_game_summaries(db, debug_mode):
 
 # Generate a summary for a single game with the GPT-3.5 model and save it to the database
 def generate_single_game_summary(db, boxscore_dict, debug_mode):
-    print("Generating summary for boxscore: " + boxscore_dict['boxscore_id'] + "...")
+    logging.info("Generating summary for boxscore: " + boxscore_dict['boxscore_id'] + "...")
     away_team = util.get_team_name_by_id(db, boxscore_dict['away_team_id'])
     away_team_abbrev = util.get_team_abbrev_by_id(db, boxscore_dict['away_team_id'])
     home_team = util.get_team_name_by_id(db, boxscore_dict['home_team_id'])
