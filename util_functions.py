@@ -9,6 +9,7 @@ from google.cloud import secretmanager
 
 default_batch_size = 30
 
+# Initializes the firebase db conection and returns a firestore client object
 def initialize_firebase(app_context):
     if app_context == "local":
         cred = credentials.Certificate("secrets/sportsdigest-gpt-firebase-adminsdk-mccm0-e20975b026.json")
@@ -23,6 +24,7 @@ def initialize_firebase(app_context):
         firebase_admin.initialize_app(credentials.Certificate(db_secret_json))
         return firestore.client()
 
+# Clears a specified collection in the database
 def clear_collection(db, collection_name):
     coll_ref = db.collection(collection_name)
     docs = coll_ref.limit(default_batch_size).stream()
@@ -36,6 +38,7 @@ def clear_collection(db, collection_name):
     if deleted >= default_batch_size:
         return clear_collection(db, collection_name)
 
+# Returns the full name of a team given its id
 def get_team_name_by_id(db, team_id):
     team_doc_ref = db.collection('teams').document(team_id).get()
     if team_doc_ref.exists:
@@ -43,15 +46,10 @@ def get_team_name_by_id(db, team_id):
     else:
         return None
 
+# Returns the abbreviation of a team given its id
 def get_team_abbrev_by_id(db, team_id):
     team_doc_ref = db.collection('teams').document(team_id).get()
     if team_doc_ref.exists:
         return team_doc_ref.to_dict()['abbreviation']
     else:
         return None
-    
-def error_handler(exception):
-    logging.error(f"An error occurred: {type(exception).__name__}")
-    logging.error(f"Error message: {str(exception)}")
-    logging.error("Here is the traceback:")
-    traceback.print_exc()

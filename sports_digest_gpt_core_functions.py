@@ -39,6 +39,7 @@ def summary_generator_sender_job(db):
 ####################################################################################################################################################
 # SportsDigest-GPT Sub-Jobs #
 
+# Updates the game collection in the DB with all of today's games
 def save_game_info(db, events):
     if len(events) == 0:
         return False
@@ -77,6 +78,7 @@ def get_unsummarized_games(db):
 
     return game_ids
 
+# Wrapper functon that gets the ESPN boxscore data for a given list of game ids
 def get_all_boxscore_data(db, game_ids):
     if len(game_ids) == 0:
         logging.warning("No games have completed yet and so no boxscores were saved...")
@@ -284,6 +286,7 @@ def clear_main_collections():
 
 # Full job flow for testing purposes
 def full_test_flow(with_delete):
+    logging.basicConfig(filename=f"logs/full-test-debug-logs.log", level=logging.INFO)
     db = util.initialize_firebase("local")
     if with_delete:
         ####-WILL DELETE ALL DATA IN THE DATABASE-####
